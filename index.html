@@ -188,6 +188,7 @@ async function listWorkspaces (accessToken) {
 
 async function exportWorkspace (accessToken, workspaceId, rateLimit = 0) {
     try {
+        writeApplicationLog(`Export Workspace started.`);
         writeApplicationLog(`Workspace ID: ${workspaceId}`);
 
         const taskMap = new Map();
@@ -205,20 +206,16 @@ async function exportWorkspace (accessToken, workspaceId, rateLimit = 0) {
         // retrieve task data
         const projectTasksPromise = projectsPromise.then(projects => {
             writeApplicationLog("Retrieving project task data...");
-            const promises = [];
-            for (const project of projects) {
-                promises.push(limiter.next().value.then(() => retrieveProjectTasks(accessToken, workspaceId, project.gid, taskMap)));
-            }
+            const promises = projects.map(project => limiter.next().value
+                .then(() => retrieveProjectTasks(accessToken, workspaceId, project.gid, taskMap)));
             const allPromises = Promise.all(promises);
             allPromises.then(() => writeApplicationLog("Project task data retrieved."));
             return allPromises;
         });
         const userTasksPromise = usersPromise.then((users) => {
             writeApplicationLog("Retrieving user task data...");
-            const promises = [];
-            for (const user of users) {
-                promises.push(limiter.next(2).value.then(() => retrieveUserTasks(accessToken, workspaceId, user.gid, taskMap)));
-            }
+            const promises = users.map(user => limiter.next(2).value
+                .then(() => retrieveUserTasks(accessToken, workspaceId, user.gid, taskMap)));
             const allPromises = Promise.all(promises);
             allPromises.then(() => writeApplicationLog("User task data retrieved."));
             return allPromises;
