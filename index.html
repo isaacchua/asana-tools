@@ -18,8 +18,8 @@ const destructureTask = ({gid, name, resource_type, resource_subtype}) => ({gid,
 
 const savedData = new Map();
 
-function writeRetrievalLog (message = "") {
-    document.getElementById("retrievals").innerHTML += `${message}\n`;
+function writeApplicationLog (content = "") {
+    document.getElementById("applicationLog").insertAdjacentHTML("beforeend", `${content}\n`);
 }
 
 async function retrieveJson (accessToken, url, method = "GET") {
@@ -103,7 +103,7 @@ async function retrieveUserData (accessToken, workspaceId) {
     catch (e) {
         if (e instanceof AsanaError) {
             if (e.response.status === 400 && e.errors[0].message.startsWith("This request is not supported")) {
-                writeRetrievalLog(`Workspace ${workspaceId} does not have users; using current user`);
+                writeApplicationLog(`Workspace ${workspaceId} does not have users; using current user`);
                 users = [await retrieveCurrentUser(accessToken)];
             }
             else {
@@ -137,7 +137,7 @@ async function retrieveUserTasks (accessToken, workspaceId, userId, taskMap) {
     catch (e) {
         if (e instanceof AsanaError) {
             if (e.response.status === 403) {
-                writeRetrievalLog(`User task list for ${userId} forbidden and skipped`);
+                writeApplicationLog(`User task list for ${userId} forbidden and skipped`);
                 return;
             }
             else {
@@ -175,37 +175,37 @@ async function listWorkspaces (accessToken) {
 
 async function exportWorkspace (accessToken, workspaceId, rateLimit = 0) {
     try {
-        writeRetrievalLog(`Workspace ID: ${workspaceId}`);
+        writeApplicationLog(`Workspace ID: ${workspaceId}`);
 
         const doubleRateLimit = 2 * rateLimit;
         const taskMap = new Map();
 
         // retrieve base data
-        writeRetrievalLog("Retrieving base data...");
+        writeApplicationLog("Retrieving base data...");
         const workspace = await retrieveWorkspaceData(accessToken, workspaceId).then(waitPromise(rateLimit));
         const projects = await retrieveProjectData(accessToken, workspaceId).then(waitPromise(rateLimit));
         const teams = await retrieveTeamData(accessToken, workspaceId).then(waitPromise(rateLimit));
         const users = await retrieveUserData(accessToken, workspaceId).then(waitPromise(doubleRateLimit));
-        writeRetrievalLog("Base data retrieved.");
+        writeApplicationLog("Base data retrieved.");
 
         // retrieve task data
         const resolvedPromise = new Promise(resolve => resolve());
-        writeRetrievalLog("Retrieving project task data...");
+        writeApplicationLog("Retrieving project task data...");
         await projects.reduce((promise, project) =>
             promise
                 .then(() => retrieveProjectTasks(accessToken, workspaceId, project.gid, taskMap))
                 .then(waitPromise(rateLimit)),
             resolvedPromise);
-        writeRetrievalLog("Retrieving user task data...");
+        writeApplicationLog("Retrieving user task data...");
         await users.reduce((promise, user) =>
             promise
                 .then(() => retrieveUserTasks(accessToken, workspaceId, user.gid, taskMap))
                 .then(waitPromise(doubleRateLimit)),
             resolvedPromise);
-        writeRetrievalLog("Task data retrieved.")
+        writeApplicationLog("Task data retrieved.")
 
         // assign task data
-        writeRetrievalLog("Assigning task data...");
+        writeApplicationLog("Assigning task data...");
         // put projects and users into maps
         const projectMap = new Map();
         storeAsanaObjects(projectMap, projects);
@@ -220,7 +220,7 @@ async function exportWorkspace (accessToken, workspaceId, rateLimit = 0) {
                     user.tasks.push(destructured);
                 }
                 else {
-                    writeRetrievalLog(`Unknown user ${task.assignee.gid} for task ${task.gid}`);
+                    writeApplicationLog(`Unknown user ${task.assignee.gid} for task ${task.gid}`);
                 }
             }
             if (task.projects?.length) {
@@ -230,12 +230,12 @@ async function exportWorkspace (accessToken, workspaceId, rateLimit = 0) {
                         project.tasks.push(destructured);
                     }
                     else {
-                        writeRetrievalLog(`Unknown project ${taskProject.gid} for task ${task.gid}`);
+                        writeApplicationLog(`Unknown project ${taskProject.gid} for task ${task.gid}`);
                     }
                 }
             }
         }
-        writeRetrievalLog("Task data assigned.")
+        writeApplicationLog("Task data assigned.")
 
         // prepare download
         const data = {
@@ -251,16 +251,15 @@ async function exportWorkspace (accessToken, workspaceId, rateLimit = 0) {
         a.href = URL.createObjectURL(file);
         a.download = filename;
         a.textContent = filename;
-        writeRetrievalLog("Workspace data exported.")
+        writeApplicationLog("Workspace data exported.")
         document.getElementById("retrievals").append(a, "\n");
-
         console.log(data);
     }
     catch (e) {
-        writeRetrievalLog(e);
+        writeApplicationLog(e);
         console.log(e);
     }
-    writeRetrievalLog();
+    writeApplicationLog();
 }
 
 function handleSubmit (event) {
@@ -327,7 +326,7 @@ document.addEventListener("DOMContentLoaded", handleDocumentReady);
         </p>
         <p>
             <input type="button" value="Export Workspace Data" id="btn_export">
-            <div id="retrievals" style="font-family:monospace;white-space:pre;"></div>
+            <div id="applicationLog" style="font-family:monospace;white-space:pre;"></div>
         </p>
     </form>
     <p>Version 1.0.1 &bull; Copyright &copy; 2024 <a href="https://github.com/isaacchua">Isaac Chua</a> &bull; <a href="LICENSE">MIT License</a> &bull; <a href="https://github.com/isaacchua/asana-tools">GitHub</a> &bull; <a href="https://isaacchua.github.io/asana-tools/export-workspace.html">Permalink</a></p>
