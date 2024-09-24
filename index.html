@@ -12,11 +12,20 @@ class AsanaError extends Error {
     }
 }
 
-const waitPromise = millis => (values => millis ? new Promise(resolve => setTimeout(() => resolve(values), millis)) : values);
+const resolvedPromise = new Promise(resolve => resolve());
+const limitRatePromise = millis => (() => millis ? new Promise(resolve => setTimeout(resolve, millis)) : resolvedPromise);
+
+function* limiterGenerator (millis = 0) {
+    let promise = resolvedPromise;
+    let multiplier;
+    while (true) {
+        const next = promise.then(limitRatePromise(millis * (multiplier ?? 1)));
+        multiplier = yield promise;
+        promise = next;
+    }
+}
 
 const destructureTask = ({gid, name, resource_type, resource_subtype}) => ({gid, name, resource_type, resource_subtype});
-
-const savedData = new Map();
 
 function writeApplicationLog (content = "") {
     document.getElementById("applicationLog").insertAdjacentHTML("beforeend", `${content}\n`);
@@ -181,73 +190,94 @@ async function exportWorkspace (accessToken, workspaceId, rateLimit = 0) {
     try {
         writeApplicationLog(`Workspace ID: ${workspaceId}`);
 
-        const doubleRateLimit = 2 * rateLimit;
         const taskMap = new Map();
+        let limiter = limiterGenerator(rateLimit);
 
         // retrieve base data
         writeApplicationLog("Retrieving base data...");
-        const workspace = await retrieveWorkspaceData(accessToken, workspaceId).then(waitPromise(rateLimit));
-        const projects = await retrieveProjectData(accessToken, workspaceId).then(waitPromise(rateLimit));
-        const teams = await retrieveTeamData(accessToken, workspaceId).then(waitPromise(rateLimit));
-        const users = await retrieveUserData(accessToken, workspaceId).then(waitPromise(doubleRateLimit));
-        writeApplicationLog("Base data retrieved.");
+        const workspacePromise = limiter.next().value.then(() => retrieveWorkspaceData(accessToken, workspaceId));
+        const projectsPromise = limiter.next().value.then(() => retrieveProjectData(accessToken, workspaceId));
+        const teamsPromise = limiter.next().value.then(() => retrieveTeamData(accessToken, workspaceId));
+        const usersPromise = limiter.next(2).value.then(() => retrieveUserData(accessToken, workspaceId));
+        Promise.all([workspacePromise, projectsPromise, teamsPromise, usersPromise])
+        .then(() => writeApplicationLog("Base data retrieved."));
 
         // retrieve task data
-        const resolvedPromise = new Promise(resolve => resolve());
-        writeApplicationLog("Retrieving project task data...");
-        await projects.reduce((promise, project) =>
-            promise
-                .then(() => retrieveProjectTasks(accessToken, workspaceId, project.gid, taskMap))
-                .then(waitPromise(rateLimit)),
-            resolvedPromise);
-        writeApplicationLog("Retrieving user task data...");
-        await users.reduce((promise, user) =>
-            promise
-                .then(() => retrieveUserTasks(accessToken, workspaceId, user.gid, taskMap))
-                .then(waitPromise(doubleRateLimit)),
-            resolvedPromise);
-        writeApplicationLog("Task data retrieved.")
+        const projectTasksPromise = projectsPromise.then(projects => {
+            writeApplicationLog("Retrieving project task data...");
+            const promises = [];
+            for (const project of projects) {
+                promises.push(limiter.next().value.then(() => retrieveProjectTasks(accessToken, workspaceId, project.gid, taskMap)));
+            }
+            const allPromises = Promise.all(promises);
+            allPromises.then(() => writeApplicationLog("Project task data retrieved."));
+            return allPromises;
+        });
+        const userTasksPromise = usersPromise.then((users) => {
+            writeApplicationLog("Retrieving user task data...");
+            const promises = [];
+            for (const user of users) {
+                promises.push(limiter.next(2).value.then(() => retrieveUserTasks(accessToken, workspaceId, user.gid, taskMap)));
+            }
+            const allPromises = Promise.all(promises);
+            allPromises.then(() => writeApplicationLog("User task data retrieved."));
+            return allPromises;
+        });
+
+        // prepare maps
+        const projectMapPromise = projectsPromise.then(projects => {
+            const projectMap = new Map();
+            storeAsanaObjects(projectMap, projects);
+            return projectMap;
+        });
+        const userMapPromise = usersPromise.then(users => {
+            const userMap = new Map();
+            storeAsanaObjects(userMap, users);
+            return userMap;
+        })
 
         // assign task data
-        writeApplicationLog("Assigning task data...");
-        // put projects and users into maps
-        const projectMap = new Map();
-        storeAsanaObjects(projectMap, projects);
-        const userMap = new Map();
-        storeAsanaObjects(userMap, users);
-        // iterate through tasks and assign
-        for (const task of taskMap.values()) {
-            const destructured = destructureTask(task);
-            if (task.assignee) {
-                const user = userMap.get(task.assignee.gid);
-                if (user) {
-                    user.tasks.push(destructured);
-                }
-                else {
-                    writeApplicationLog(`Unknown user ${task.assignee.gid} for task ${task.gid}`);
-                }
-            }
-            if (task.projects?.length) {
-                for (const taskProject of task.projects) {
-                    const project = projectMap.get(taskProject.gid);
-                    if (project) {
-                        project.tasks.push(destructured);
+        const tasksPromise = Promise.all([projectTasksPromise, userTasksPromise, projectMapPromise, userMapPromise])
+        .then(([,, projectMap, userMap]) => {
+            // iterate through tasks and assign
+            writeApplicationLog("Assigning task data...");
+            for (const task of taskMap.values()) {
+                const destructured = destructureTask(task);
+                if (task.assignee) {
+                    const user = userMap.get(task.assignee.gid);
+                    if (user) {
+                        user.tasks.push(destructured);
                     }
                     else {
-                        writeApplicationLog(`Unknown project ${taskProject.gid} for task ${task.gid}`);
+                        writeApplicationLog(`Unknown user ${task.assignee.gid} for task ${task.gid}`);
+                    }
+                }
+                if (task.projects?.length) {
+                    for (const taskProject of task.projects) {
+                        const project = projectMap.get(taskProject.gid);
+                        if (project) {
+                            project.tasks.push(destructured);
+                        }
+                        else {
+                            writeApplicationLog(`Unknown project ${taskProject.gid} for task ${task.gid}`);
+                        }
                     }
                 }
             }
-        }
-        writeApplicationLog("Task data assigned.")
+            writeApplicationLog("Task data assigned.")
+
+            return Array.fromAsync(taskMap.values());
+        });
+        const finalProjectsPromise = tasksPromise.then(() => projectsPromise);
+        const finalUsersPromise = tasksPromise.then(() => usersPromise);
 
         // prepare download
         const data = {
-            workspace: workspace,
-            projects: projects,
-            teams: teams,
-            users: users,
-            tasks: Array.from(taskMap.values())
+            workspace: await workspacePromise,
+            projects: await finalProjectsPromise,
+            teams: await teamsPromise,
+            users: await finalUsersPromise,
+            tasks: await tasksPromise
         };
         const a = document.createElement("a");
         const file = new Blob([JSON.stringify(data, null, 2)], { type: "text/json;charset=utf-8" });
@@ -318,7 +348,7 @@ document.addEventListener("DOMContentLoaded", handleDocumentReady);
                 <tr>
                     <td><label for="rate_limit">Rate Limit: Time Between Requests (ms): </label></td>
                     <td>
-                        <input type="number" id="rate_limit" name="rate_limit" value="0" min="0">
+                        <input type="number" id="rate_limit" name="rate_limit" value="20" min="0">
                         <a href="https://developers.asana.com/docs/rate-limits" target="_blank">[?]</a>
                     </td>
                 </tr>
