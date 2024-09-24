@@ -35,7 +35,7 @@ function appendApplicationLog (...params) {
     document.getElementById("applicationLog").append(...params);
 }
 
-async function retrieveJson (accessToken, url, method = "GET") {
+async function callAsanaApi (accessToken, url, method = "GET") {
     const response = await fetch(url, {
         method: method,
         headers: {
@@ -80,12 +80,12 @@ function storeAsanaObjects (map, objs) {
 
 async function retrieveWorkspaceData (accessToken, workspaceId) {
     const url = `https://app.asana.com/api/1.0/workspaces/${workspaceId}`;
-    return retrieveJson(accessToken, url);
+    return callAsanaApi(accessToken, url);
 }
 
 async function retrieveProjectData (accessToken, workspaceId) {
     const url = `https://app.asana.com/api/1.0/workspaces/${workspaceId}/projects?opt_expand=(this)`;
-    const projects = await retrieveJson(accessToken, url);
+    const projects = await callAsanaApi(accessToken, url);
 
     for (const project of projects) {
         delete project.workspace;
@@ -97,21 +97,21 @@ async function retrieveProjectData (accessToken, workspaceId) {
 
 async function retrieveProjectTasks (accessToken, workspaceId, projectId, taskMap) {
     const tasksUrl = `https://app.asana.com/api/1.0/projects/${projectId}/tasks?opt_expand=(this%7Csubtasks%2B)`;
-    const tasks = await retrieveJson(accessToken, tasksUrl);
+    const tasks = await callAsanaApi(accessToken, tasksUrl);
     processTaskList(tasks);
     storeAsanaObjects(taskMap, tasks);
 }
 
 async function retrieveTeamData (accessToken, workspaceId) {
     const url = `https://app.asana.com/api/1.0/workspaces/${workspaceId}/teams?opt_expand=(this)`;
-    return retrieveJson(accessToken, url);
+    return callAsanaApi(accessToken, url);
 }
 
 async function retrieveUserData (accessToken, workspaceId) {
     const url = `https://app.asana.com/api/1.0/workspaces/${workspaceId}/users?opt_expand=(this)`;
     let users;
     try {
-        users = await retrieveJson(accessToken, url);
+        users = await callAsanaApi(accessToken, url);
     }
     catch (e) {
         if (e instanceof AsanaError) {
@@ -138,14 +138,14 @@ async function retrieveUserData (accessToken, workspaceId) {
 
 async function retrieveCurrentUser (accessToken) {
     const url = `https://app.asana.com/api/1.0/users/me`;
-    return retrieveJson(accessToken, url);
+    return callAsanaApi(accessToken, url);
 }
 
 async function retrieveUserTasks (accessToken, workspaceId, userId, taskMap) {
     const listUrl = `https://app.asana.com/api/1.0/users/${userId}/user_task_list?workspace=${workspaceId}`;
     let list;
     try {
-        list = await retrieveJson(accessToken, listUrl);
+        list = await callAsanaApi(accessToken, listUrl);
     }
     catch (e) {
         if (e instanceof AsanaError) {
@@ -163,7 +163,7 @@ async function retrieveUserTasks (accessToken, workspaceId, userId, taskMap) {
     }
     
     const tasksUrl = `https://app.asana.com/api/1.0/user_task_lists/${list.gid}/tasks?opt_expand=(this%7Csubtasks%2B)`;
-    const tasks = await retrieveJson(accessToken, tasksUrl);
+    const tasks = await callAsanaApi(accessToken, tasksUrl);
     processTaskList(tasks);
     storeAsanaObjects(taskMap, tasks);
 }
@@ -171,7 +171,7 @@ async function retrieveUserTasks (accessToken, workspaceId, userId, taskMap) {
 async function listWorkspaces (accessToken) {
     try {
         const url = "https://app.asana.com/api/1.0/workspaces/";
-        const workspaces = await retrieveJson(accessToken, url);
+        const workspaces = await callAsanaApi(accessToken, url);
         console.log(workspaces);
         const linksHtml = workspaces.map(workspace => `<a href="#" class="workspace" data-id="${workspace.gid}">${workspace.name} (${workspace.gid})</a>`).join("<br>\n");
         document.getElementById("workspaces").innerHTML = linksHtml;
