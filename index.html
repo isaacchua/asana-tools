@@ -201,7 +201,7 @@ async function listWorkspaces (accessToken) {
     }
     catch (e) {
         document.getElementById("workspaces").insertAdjacentHTML("beforeend", `<div style="white-space:pre">${e}</div>`);
-        console.log(e);
+        console.error(e);
     }
 }
 
@@ -295,6 +295,7 @@ async function exportWorkspace (accessToken, workspaceId, rateLimit = 0) {
             users: await finalUsersPromise,
             tasks: await tasksPromise
         };
+        console.log(data);
         const a = document.createElement("a");
         const file = new Blob([JSON.stringify(data, null, 2)], { type: "text/json;charset=utf-8" });
         const filename = `asana_workspace_${workspaceId}_${Date.now()}.json`;
@@ -303,11 +304,10 @@ async function exportWorkspace (accessToken, workspaceId, rateLimit = 0) {
         a.textContent = filename;
         writeApplicationLog("Workspace data exported.")
         appendApplicationLog(a, "\n");
-        console.log(data);
     }
     catch (e) {
         writeApplicationLog(e);
-        console.log(e);
+        console.error(e);
     }
     writeApplicationLog();
 }
@@ -337,7 +337,7 @@ async function deleteOwnTasks (accessToken, workspaceId, rateLimit = 0) {
     }
     catch (e) {
         writeApplicationLog(e);
-        console.log(e);
+        console.error(e);
     }
     writeApplicationLog();
 }
