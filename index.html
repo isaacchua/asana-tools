@@ -168,6 +168,25 @@ async function retrieveUserTasks (accessToken, workspaceId, userId, taskMap) {
     storeAsanaObjects(taskMap, tasks);
 }
 
+async function retrieveCurrentUserTasksShort (accessToken, workspaceId) {
+    const listUrl = `https://app.asana.com/api/1.0/users/me/user_task_list?workspace=${workspaceId}`;
+    let list;
+    try {
+        list = await callAsanaApi(accessToken, listUrl);
+    }
+    catch (e) {
+        throw e;
+    }
+    
+    const tasksUrl = `https://app.asana.com/api/1.0/user_task_lists/${list.gid}/tasks`;
+    return callAsanaApi(accessToken, tasksUrl);
+}
+
+async function deleteTask (accessToken, taskId) {
+    const url = `https://app.asana.com/api/1.0/tasks/${taskId}`;
+    return callAsanaApi(accessToken, url, "DELETE");
+}
+
 async function listWorkspaces (accessToken) {
     try {
         const url = "https://app.asana.com/api/1.0/workspaces/";
@@ -293,6 +312,36 @@ async function exportWorkspace (accessToken, workspaceId, rateLimit = 0) {
     writeApplicationLog();
 }
 
+async function deleteOwnTasks (accessToken, workspaceId, rateLimit = 0) {
+    try {
+        writeApplicationLog(`Delete Own Tasks started.`);
+        writeApplicationLog(`Workspace ID: ${workspaceId}`);
+
+        let limiter = limiterGenerator(rateLimit);
+
+        // retrieve current user's tasks
+        writeApplicationLog("Retrieving current user's tasks...");
+        const userTasksPromise = limiter.next().value.then(() => retrieveCurrentUserTasksShort(accessToken, workspaceId));
+
+        // delete tasks
+        const deletePromise = userTasksPromise.then(tasks => {
+            writeApplicationLog(`Current user's tasks retrieved: ${tasks.length} tasks.`);
+            writeApplicationLog("Deleting tasks...");
+            const promises = tasks.map(task => limiter.next().value
+                .then(() => deleteTask(accessToken, task.gid)));
+            const allPromises = Promise.all(promises);
+            allPromises.then(() => writeApplicationLog("Current user's tasks deleted."));
+            return allPromises;
+        });
+        await deletePromise;
+    }
+    catch (e) {
+        writeApplicationLog(e);
+        console.log(e);
+    }
+    writeApplicationLog();
+}
+
 function handleSubmit (event) {
     event.preventDefault();
 }
@@ -311,10 +360,21 @@ function handleExportWorkspace (event) {
     exportWorkspace(accessToken, workspaceId, rateLimit);
 }
 
+function handleDeleteOwnTasks (event) {
+    event.preventDefault();
+    if (window.confirm("Are you sure you want to delete all your tasks in this workspace?\n\nDeleted tasks will go into the trash and will be permanently deleted after 30 days.")) {
+        const accessToken = document.getElementById("access_token").value;
+        const workspaceId = document.getElementById("workspace_id").value;
+        const rateLimit = parseInt(document.getElementById("rate_limit").value);
+        deleteOwnTasks(accessToken, workspaceId, rateLimit);
+    }
+}
+
 function handleDocumentReady (event) {
     document.getElementById("form").addEventListener("submit", handleSubmit);
     document.getElementById("btn_list").addEventListener("click", handleListWorkspaces);
     document.getElementById("btn_export").addEventListener("click", handleExportWorkspace);
+    document.getElementById("btn_delete").addEventListener("click", handleDeleteOwnTasks);
 }
 
 function handleSetWorkspaceId (event) {
@@ -327,7 +387,7 @@ document.addEventListener("DOMContentLoaded", handleDocumentReady);
 </head>
 <body>
     <h1>Asana Tools</h1>
-    <p>Exports a workspace's details, projects, tasks, teams, and users in JSON format.</p>
+    <p>Maintenance tools for your Asana account.</p>
     <form id="form">
         <p>
             <table>
@@ -357,6 +417,7 @@ document.addEventListener("DOMContentLoaded", handleDocumentReady);
         </p>
         <p>
             <input type="button" value="Export Workspace Data" id="btn_export">
+            <input type="button" value="Delete Own Tasks" id="btn_delete">
             <div id="applicationLog" style="font-family:monospace;white-space:pre;"></div>
         </p>
     </form>
