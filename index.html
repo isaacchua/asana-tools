@@ -2,7 +2,7 @@
 <html>
 <head>
     <meta charset="UTF-8" />
-    <title>Asana - Export Workspace</title>
+    <title>Asana Tools</title>
     <script>
 class AsanaError extends Error {
     constructor (message, response, errors, ...params) {
@@ -155,7 +155,25 @@ async function retrieveUserTasks (accessToken, workspaceId, userId, taskMap) {
     storeAsanaObjects(taskMap, tasks);
 }
 
-async function exportAsana (accessToken, workspaceId, rateLimit = 0) {
+async function listWorkspaces (accessToken) {
+    try {
+        const url = "https://app.asana.com/api/1.0/workspaces/";
+        const workspaces = await retrieveJson(accessToken, url);
+        console.log(workspaces);
+        const linksHtml = workspaces.map(workspace => `<a href="#" class="workspace" data-id="${workspace.gid}">${workspace.name} (${workspace.gid})</a>`).join("<br>\n");
+        document.getElementById("workspaces").innerHTML = linksHtml;
+        const links = document.getElementsByClassName("workspace");
+        for (const link of links) {
+            link.addEventListener("click", handleSetWorkspaceId);
+        }
+    }
+    catch (e) {
+        document.getElementById("workspaces").insertAdjacentHTML("beforeend", `<div style="white-space:pre">${e}</div>`);
+        console.log(e);
+    }
+}
+
+async function exportWorkspace (accessToken, workspaceId, rateLimit = 0) {
     try {
         writeRetrievalLog(`Workspace ID: ${workspaceId}`);
 
@@ -245,30 +263,8 @@ async function exportAsana (accessToken, workspaceId, rateLimit = 0) {
     writeRetrievalLog();
 }
 
-async function listWorkspaces (accessToken) {
-    try {
-        const url = "https://app.asana.com/api/1.0/workspaces/";
-        const workspaces = await retrieveJson(accessToken, url);
-        console.log(workspaces);
-        const linksHtml = workspaces.map(workspace => `<a href="#" class="workspace" data-id="${workspace.gid}">${workspace.name} (${workspace.gid})</a>`).join("<br>\n");
-        document.getElementById("workspaces").innerHTML = linksHtml;
-        const links = document.getElementsByClassName("workspace");
-        for (const link of links) {
-            link.addEventListener("click", handleSetWorkspaceId);
-        }
-    }
-    catch (e) {
-        document.getElementById("workspaces").insertAdjacentHTML("beforeend", `<div style="white-space:pre">${e}</div>`);
-        console.log(e);
-    }
-}
-
 function handleSubmit (event) {
     event.preventDefault();
-    const accessToken = document.getElementById("access_token").value;
-    const workspaceId = document.getElementById("workspace_id").value;
-    const rateLimit = parseInt(document.getElementById("rate_limit").value);
-    exportAsana(accessToken, workspaceId);
 }
 
 function handleListWorkspaces (event) {
@@ -277,9 +273,18 @@ function handleListWorkspaces (event) {
     listWorkspaces(accessToken);
 }
 
+function handleExportWorkspace (event) {
+    event.preventDefault();
+    const accessToken = document.getElementById("access_token").value;
+    const workspaceId = document.getElementById("workspace_id").value;
+    const rateLimit = parseInt(document.getElementById("rate_limit").value);
+    exportWorkspace(accessToken, workspaceId);
+}
+
 function handleDocumentReady (event) {
     document.getElementById("form").addEventListener("submit", handleSubmit);
     document.getElementById("btn_list").addEventListener("click", handleListWorkspaces);
+    document.getElementById("btn_export").addEventListener("click", handleExportWorkspace);
 }
 
 function handleSetWorkspaceId (event) {
@@ -291,7 +296,7 @@ document.addEventListener("DOMContentLoaded", handleDocumentReady);
     </script>
 </head>
 <body>
-    <h1>Asana - Export Workspace</h1>
+    <h1>Asana Tools</h1>
     <p>Exports a workspace's details, projects, tasks, teams, and users in JSON format.</p>
     <form id="form">
         <p>
@@ -321,7 +326,7 @@ document.addEventListener("DOMContentLoaded", handleDocumentReady);
             <div id="workspaces" style="font-family:monospace;"></div>
         </p>
         <p>
-            <input type="submit" value="Retrieve Workspace Data">
+            <input type="button" value="Export Workspace Data" id="btn_export">
             <div id="retrievals" style="font-family:monospace;white-space:pre;"></div>
         </p>
     </form>
