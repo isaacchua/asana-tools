@@ -22,6 +22,10 @@ function writeApplicationLog (content = "") {
     document.getElementById("applicationLog").insertAdjacentHTML("beforeend", `${content}\n`);
 }
 
+function appendApplicationLog (...params) {
+    document.getElementById("applicationLog").append(...params);
+}
+
 async function retrieveJson (accessToken, url, method = "GET") {
     const response = await fetch(url, {
         method: method,
@@ -252,7 +256,7 @@ async function exportWorkspace (accessToken, workspaceId, rateLimit = 0) {
         a.download = filename;
         a.textContent = filename;
         writeApplicationLog("Workspace data exported.")
-        document.getElementById("retrievals").append(a, "\n");
+        appendApplicationLog(a, "\n");
         console.log(data);
     }
     catch (e) {
